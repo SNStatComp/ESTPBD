@@ -1,0 +1,76 @@
+---
+title: "Text mining course CBS"
+output: html_notebook
+---
+
+#Day 3, Advanced text analysis part2
+
+Partly based on the python NLP notebook of Ali at https://github.com/ahurriyetoglu/nlp-tutorial/blob/master/notebooks/01%20recipes_exploratory_analysis.ipynb
+
+##Parser
+The easiest way to test the Dutch language Alpino parser is by using the webversion at http://nederbooms.ccl.kuleuven.be/eng/alpino. For instance test the following sentence.
+```{r}
+"Jan houdt van taart, Piet niet"
+```
+
+##Natural Language Processing
+Load libraries.
+```{r}
+library(stringr, verbose = FALSE)
+library(tm, verbose = FALSE)
+```
+
+Get italian recipes text.
+```{r}
+text <- readLines("data/pg24407.txt")
+text_tl <- tolower(text)
+```
+
+Get tokens from text after conversion to lower case.
+```{r}
+tokens <- scan_tokenizer(text_tl)
+length(tokens)
+```
+
+Count occurence of unique words in text. Remove punctuations first.
+```{r}
+tf <- termFreq(text_tl, control = list(removePunctuation = TRUE))
+sort(tf, decreasing = TRUE)[1:100]
+```
+
+Many stopwords occur. Remove them also.
+```{r}
+tf1 <- termFreq(text_tl, control = list(removePunctuation = TRUE, stopwords = stopwords("english")))
+sort(tf1, decreasing = TRUE)[1:100]
+```
+
+For some words a number of variants occur. Stemming is the process of reducing a word to its base/root form, called stem.
+```{r}
+tf2 <- termFreq(text_tl, control = list(removePunctuation = TRUE, stopwords = stopwords("english"), stemming = TRUE))
+sort(tf2, decreasing = TRUE)[1:100]
+```
+
+One could also look at so-called n-grams in the text. For instance which combination of two words occur most often in the book. A slightly different preprocessing approach is used here to assure that the text is processed in the correct sequence.
+```{r}
+text_pre <- removePunctuation(text_tl)
+text_pre <- removeWords(text_pre, stopwords("english"))
+text_pre <- stemDocument(text_pre, language = "english")
+##Define a bigram tokenizer
+BigramTokenizer <- function(x) {
+  unlist(lapply(NLP:::ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+}
+tf3 <- termFreq(text_pre, control = list(tokenize = BigramTokenizer))
+sort(tf3, decreasing = TRUE)[1:100]
+```
+
+And now with stopwords included.
+```{r}
+text_pre <- removePunctuation(text_tl)
+text_pre <- stemDocument(text_pre, language = "english")
+##Define a bigram tokenizer
+BigramTokenizer <- function(x) {
+  unlist(lapply(NLP:::ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+}
+tf4 <- termFreq(text_pre, control = list(tokenize = BigramTokenizer))
+sort(tf4, decreasing = TRUE)[1:100]
+```

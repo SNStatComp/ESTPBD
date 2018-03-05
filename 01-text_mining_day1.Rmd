@@ -1,0 +1,182 @@
+---
+title: "Text mining course CBS"
+output: html_notebook
+---
+
+#Day 1
+
+Material covered: chapter 2 of Ali's text mining course,
+http://nbviewer.jupyter.org/github/fbkarsdorp/python-course/blob/master/Chapter%202%20-%20First%20steps.ipynb
+The exercies are inspired by the notebook.
+
+## Load R libraries
+
+```{r}
+library(readr)
+library(stringr)
+library(tm)
+```
+
+## Files and folders
+
+Assume data subdirectory is in the working directory. List files of subdir 'haggard'. 
+```{r}
+dataFolder <- "data/"
+haggardFiles <- list.files(paste0(dataFolder, "haggard"))
+head(haggardFiles)
+```
+
+## Reading data
+
+Read a text file.
+```{r}
+x <- readLines(paste0(dataFolder, "austen-emma-excerpt.txt"), n = -1, warn = FALSE)
+xx <- read_file(paste0(dataFolder, "austen-emma-excerpt.txt"))
+```
+The object x is a vector of character vectors, each element a line of the original file. The object xx is a single character vector containing the entire file.
+```{r}
+length(x)
+length(xx)
+nchar(xx)
+```
+Count number of occurences of 'e'.
+```{r}
+ne <- str_count(xx, "e")
+ne
+```
+Occurences of "an" both as-is and as separate word.
+```{r}
+str_count(xx, "an")
+str_count(xx, " an ")
+```
+
+## Simple text operations 
+
+Split text into words. Function str_split returns a list with an element for each element of xx. Here xx is of length 1 so the words we want are in the first element of the list.
+```{r}
+words <- str_split(xx, "[[:space:]]+")[[1]]
+length(words)
+```
+```{r}
+head(words)
+```
+How many words are there?
+```{r}
+length(words)
+```
+How many times does the word "in" occur?
+```{r}
+sum(words == "in")
+```
+Function to count the number of occurences of a word.
+```{r}
+countInList <- function(thisList, thisWord) {
+   sum(thisList == thisWord)
+}
+```
+Now count number of times other words occur.
+```{r}
+countInList(words, "an")
+countInList(words, "the")
+```
+
+## Dictionary
+
+We want a list of all words that occur and how many times they occur. 
+```{r}
+dict <- sort(table(words), decreasing = TRUE)
+head(dict, n = 15)
+```
+
+## Text clean up
+Make all lower case.
+```{r}
+xxLC <- tolower(xx)
+```
+
+Sentence to practice on.
+```{r}
+t <- "Please. remove. all. dots. from. this. sentence."
+```
+
+Remove final stops.
+```{r}
+tFS <- str_replace_all(t, "[.]", "")
+tFS
+```
+
+A new sentence.
+```{r}
+t2 <- "Commas, as it turns out, are so much overestimated."
+```
+
+Set to lowercase and remove comma's.
+```{r}
+t2LC <- str_to_lower(t2)
+t2LCC <- str_replace_all(t2LC, "[,]", "")
+t2LCC
+```
+
+Create a function to remove all punctuation.
+```{r}
+remove_punc <- function(text) {
+  punctuation <- '!@#$%^&*()_-+={}[]:;"\'|<>,.?/~`'
+  for(i in 1:nchar(punctuation)) {
+    char <- substring(punctuation, first = i, last = i)
+    text <- str_replace_all(text, coll(char), "")
+    }
+  return(text)
+}
+```
+
+Use a new sentence.
+```{r}
+t3 <- "Commas, as it turns out, are overestimated. Dots, however, even more so!"
+```
+Apply the cleaning function.
+```{r}
+t3CL <- remove_punc(t3)
+t3CL
+```
+
+However in R loops are not preferred (certainly not for long texts), so it is better to replace the remove_punc function with an alternative. For instance by removing all punctuation with a regular expression.
+```{r}
+t3RE <-str_replace_all(t3,"[[:punct:]]","")
+t3RE
+```
+
+Finally, a text can be cleaned up, the words counted and the results can be written to a file.
+```{r}
+xxLC <- str_to_lower(xx)
+xxLCRP <- str_replace_all(xxLC, "[[:punct:]]", "")
+wordsLCRP <- str_split(xxLCRP, "[[:space:]]+")[[1]]
+tabxx <- sort(table(wordsLCRP), decreasing = TRUE)
+write.table(file = "output_freq.txt", x = tabxx, row.names = FALSE, col.names = FALSE)
+```
+
+
+## Working with tm
+
+```{r}
+tf = termFreq(xx, control = list(removePunctuation = TRUE))
+tf
+```
+Create a corpus.
+```{r}
+dfsrc = DataframeSource(data.frame(doc_id = 1, text = xx))
+corp = SimpleCorpus(dfsrc)
+```
+Split into words,assuming words as sequences of characters separated by white space(s).
+```{r}
+dtm =  DocumentTermMatrix(corp)
+inspect(dtm)
+```
+```{r}
+dimnames(dtm)
+```
+
+Get number of occurences of 'woodhouse' from dtm.
+```{r}
+dtm$v[dtm$dimnames$Terms == "woodhouse"]
+```
+Check the content of the output_freq.txt file to check this result.

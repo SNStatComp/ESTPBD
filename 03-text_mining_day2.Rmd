@@ -1,0 +1,297 @@
+---
+title: "Text mining course CBS"
+output: html_notebook
+---
+
+#Day 2, regular expressions
+
+Based on python notebook https://github.com/ahurriyetoglu/Splitsville/blob/master/Splitsville.ipynb. The number between square brackets (e.g. #[1]) refer to the numbers used in the python notebook. Examples untill #40 are included.
+
+
+```{r}
+#[1]
+txt <- 'The quick brown fox born on 1/23/2013 jumped over the lazy dog born on 10/6/10.'
+```
+Functions we will need include those documented
+```{r}
+?grep
+```
+Looking for a match with "The". Matching as-is, not using regular expressions.
+```{r}
+#[2]
+grep("The", txt, fixed = TRUE)
+```
+The return value is the index where the pattern occurs.
+
+The stringr library can be used to match "the" as-is in the string
+```{r}
+#[5]
+library(stringr)
+str_locate(txt, "the")
+```
+The values returned are the start and end index of the pattern.
+
+Locating matches ignoring case, use regex().
+```{r}
+#[6]
+str_locate(txt, regex(pattern = 'the', ignore_case = TRUE))
+```
+str_locate only shows the first occurence of the pattern, use str_locate_all to shown all matches
+
+Match all
+```{r}
+#[10]
+str_locate_all(txt, regex(pattern = 'the', ignore_case = TRUE))
+```
+
+Locate subsequent word matches and show words matched with str_extract.
+```{r}
+#[11]
+str_extract_all(txt, regex(pattern = '(brown|lazy) (dog|fox)'))
+```
+
+Capturing words with o in between characters.
+```{r}
+#[14]
+str_extract_all(txt, regex(pattern = '\\w+o\\w+'))
+```
+
+Capturing words with o in between characters including those starting or ending with o (so-called o-words)
+```{r}
+#[15]
+str_extract_all(txt, regex(pattern = '\\w*o\\w*'))
+```
+
+Substitute all o-words with the string 'o-word'.
+```{r}
+#[16]
+str_replace_all(txt, regex(pattern = '\\w*o\\w*'), 'o-word')
+```
+
+Adding = before and after o-words.
+```{r}
+#[18]
+str_replace_all(txt, regex(pattern = '(\\w*)o(\\w*)'), '=\\1o\\2=')
+```
+
+Try to catch the day portion (second number) of the dates.
+```{r}
+#[22]
+str_extract_all(txt, regex(pattern = '(?x) / (.* ) /'))
+```
+This matched to much, by including ? the matching becomes less greedy.
+```{r}
+#[23]
+str_extract_all(txt, regex(pattern = "(?x) / (.*? ) /"))
+```
+
+This also works for other quantifiers.
+```{r}
+#[24]
+str_extract_all(txt, regex(pattern = '(?x) ([aeiou]) .* \\1'))
+```
+The results differ for lazy matching (with *?)
+```{r}
+#[25]
+str_extract_all(txt, regex(pattern = '(?x) ([aeiou]) .*? \\1'))
+```
+
+Patterns can be used to split words. Here spaces are used to split words.
+```{r}
+#[26]
+str_split(txt, pattern = '\\s+')
+```
+The letter o can also be used.
+```{r}
+#[27]
+str_split(txt, pattern = 'o')
+```
+
+To split on a word and ignore case one can use ?i as an option.
+```{r}
+#[30]
+str_split(txt, pattern = '(?i)the')
+```
+
+This pattern splits on words with an internal u
+```{r}
+#[32]
+str_split(txt, pattern = '\\w+u\\w+')
+```
+
+This pattern splits on all o-words.
+```{r}
+#[34]
+str_split(txt, pattern = '\\w*o\\w*')
+```
+
+Split only on 4-letter words.
+```{r}
+#[36]
+str_split(txt, pattern = '\\b\\w{4}\\b')
+```
+
+and split on word boundaries.
+```{r}
+#[40]
+str_split(txt, pattern = '\\b')
+```
+
+##Additional excercises
+Detect email adresses.
+```{r}
+emails <- c("test@gmail.com", "abc.defgh@cbs.nl", "nepadres.at.com", "info@voorbeeld.be", "kees_mees@werk.info")
+```
+Here is a regular expression for emails that usually works. 
+```{r}
+grepl('^[[:alnum:]._-]+@[[:alnum:].-]+$', emails)
+```
+Find usernames in Tweets.
+```{r}
+unames <- c("@test", "@usrusr_", "@kees_mees", "@info.at.vbbe", "#tag", "email@test_nl", "@not-allowed", "@0000", "@AVERYLONGNAMEISNOTAllowed", "a sentence with a @username in it", "@@too_much")
+```
+Here is a regular expression for usernames in tweets. They should all start with @.
+```{r}
+grepl('^@([A-Za-z0-9_]){1,15}$', unames)
+```
+The sentence should be split up in words to allow proper identification
+
+Find Dutch phonenumbers
+```{r}
+phoneNR <- c("020-12345678", "+31 20 12345678", "+31 (0)20 12345678", "+31 06 1234 5678", "12345678901", "012345678901")
+```
+This should match Dutch phonenumbers.
+```{r}
+phoneNRP <- str_replace_all(phoneNR, regex('[\\s\\-]'), "")
+grepl('(^\\+[0-9]{2}|^\\+[0-9]{2}\\(0\\)|^\\(\\+[0-9]{2}\\)\\(0\\)|^00[0-9]{2}|^0)([0-9]{10}$)', phoneNRP)
+```
+
+Match numbers.
+```{r}
+numb <- c(0, 1, 2, 3.14, "6", 3,000, "Inf", NA)
+```
+This matches numbers.
+```{r}
+grepl('[[:digit:]]+', numb)
+```
+Match currencies.
+```{r}
+money <- c("$100", "200", "$", "$3.14")
+```
+Match dollar mentions.
+```{r}
+grepl('\\$[0-9,.]+', money)
+```
+
+Create your own parser, this one splits on spaces and "/"
+```{r}
+#[32]
+str_split(txt, pattern = '[\\s\\/]')
+```
+
+#More with the tm package
+Reading texts from data/gutenberg/training in a corpus.
+```{r}
+library(tm)
+myPath <- "data/gutenberg/training/"
+gut <- VCorpus(DirSource(myPath, encoding = "UTF-8"), readerControl = list(language = "en"))
+gut
+```
+Look at first 2 documents using inspect().
+```{r}
+inspect(gut[1:2])
+```
+Accessing one document.
+```{r}
+mydoc <- gut[[3]]
+class(mydoc)
+```
+Look at meta info of this document.
+```{r}
+meta(mydoc)
+```
+Getting access to the text in a document.
+```{r}
+mytxt <- gut[[4]]$content
+class(mytxt)
+length(mytxt)
+mytxt[1:16]
+```
+## Transformations
+These are done using tm_map().
+Removing extra white space
+```{r}
+gut <- tm_map(gut, stripWhitespace)
+gut[[4]]$content[1:16]
+```
+Where there were more than 1 space there is now only one, eg at start of lines 14 and 16 above.
+Convert to lower case:
+```{r}
+gut <- tm_map(gut, content_transformer(tolower))
+gut[[4]]$content[1:16]
+```
+Removing stopwords.
+```{r}
+gut <- tm_map(gut, removeWords, stopwords("english"))
+gut[[4]]$content[1:16]
+```
+Stemming:
+```{r}
+gut <- tm_map(gut, stemDocument)
+gut[[4]]$content[1:16]
+```
+Observe differences before and after stemming.
+
+## Term-document matrices
+```{r}
+dtm <- DocumentTermMatrix(gut)
+inspect(dtm)
+```
+```{r}
+dim(dtm) # rows are documents, columns are words
+```
+Finding the top 3 most occuring terms for each document.
+```{r}
+findMostFreqTerms(dtm, 3)
+```
+Finding words that correlate with a given word. Need to specify the minimum correlation.
+```{r}
+findAssocs(dtm, "child", 0.85)
+```
+## Remove rare terms
+Typically many words are rare. Remove those to reduce the size of the matrix.
+```{r}
+dtmsprs <- removeSparseTerms(dtm, 0.5)
+dim(dtmsprs)
+```
+#Based on Ali's chapter 3 notebook
+```{r}
+myPath <- "data/arabian_nights/"
+arab <- VCorpus(DirSource(myPath, encoding = "UTF-8"), readerControl = list(language = "en"))
+arab <- tm_map(arab, stripWhitespace)
+arab <- tm_map(arab, content_transformer(tolower))
+arab <- tm_map(arab, removePunctuation)
+arab <- tm_map(arab, stemDocument)
+```
+We now have a cleaned corpus.
+Find lengths of the documents.
+```{r}
+len <- as.numeric(lapply(arab, function(x) length(x$content)))
+summary(len)
+```
+```{r}
+dtma <- DocumentTermMatrix(arab, control = list(tokenize = "MC")) 
+dtma <- removeSparseTerms(dtma, 0.5)
+dim(dtma)
+```
+Make a R matrix and count how many times the words occur across all documents.
+```{r}
+mat <- as.matrix(dtma)
+colSums(mat)
+```
+
+
+
+
+
+

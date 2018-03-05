@@ -1,0 +1,267 @@
+---
+title: "Text mining course CBS"
+output: html_notebook
+---
+
+#Day 4, Exploring Big Text collections
+
+Based on the slides TextMining-CBS-7-Exploring-big-text-collections.pdf of Ali at https://drive.google.com/drive/folders/1k0mHe69qbAf6RYqkp_K9G4D50z1399-o.
+
+##Word cloud
+The simplest visualization to produce when analysing text is a wordcloud. R has serveral packages available that support this. The Olympic tweets dataset is used to illustrate this.
+```{r}
+library(twitteR, verbose = FALSE)
+library(stringr, verbose = FALSE)
+library(tm, verbose = FALSE)
+##load tweets
+load("data/Twitter/tweets_topic.RData")
+##convert to data frame
+tweetsTDF <- twListToDF(tweetsT)
+##make sure UTF8 coding is used
+tweetsTDF$text2 <- iconv(tweetsTDF$text, "UTF-8", "UTF-8", sub='')
+##create a corpus
+corpT <- Corpus(VectorSource(tweetsTDF$text2))
+corpT <- tm_map(corpT, tolower)
+corpT <- tm_map(corpT, stripWhitespace)
+corpT <- tm_map(corpT, removePunctuation)
+corpT <- tm_map(corpT, removeWords, stopwords('english'))
+corpT <- tm_map(corpT, stemDocument, language = 'en')   ##Assume all tweets are in English
+```
+
+Produce a Word cloud.
+```{r}
+library(wordcloud)
+wordcloud(corpT, max.words = 100, random.order = FALSE)
+```
+
+Produce a more fancy wordcloud (with colours).
+```{r}
+library(wordcloud2)
+words <- scan_tokenizer(corpT)
+tab_words <- table(words)
+wordcloud2(tab_words)
+```
+
+Concordanses of words  Get tokens from text after conversion to lower case.
+```{r}
+##Define function, written by http://www.martinschweinberger.de/blog/welcom/
+##################################################################
+# Start defining function
+# without output saved on computer
+ConcR <- function(pathname, search.pattern, range, exact = FALSE, all.pre = FALSE) {
+# load required packages
+  require("plyr")
+  require("data.table")
+  require("stringr")
+  require("tm")
+###############################################################
+# load file IDs
+corpus.files = list.files(path = pathname, pattern = NULL, all.files = T,
+  full.names = T, recursive = T, ignore.case = T, include.dirs = T)
+# modify search pattern to extract from space to space
+  search.pattern.new <- paste("qwertz", search.pattern, "asdfgh", collapse = "")
+  search.pattern.new <- gsub("qwertz ", "qwertz", search.pattern.new, fixed = T)
+  search.pattern.new <- gsub(" asdfgh", "asdfgh", search.pattern.new, fixed = T)
+  search.pattern.new <- gsub("qwertz", "[A-Z]{0,1}[a-z]*", search.pattern.new, fixed = T)
+  search.pattern.new <- gsub("asdfgh", "[a-z]*", search.pattern.new, fixed = T)
+# implement new search pattern (if exact = false)
+  ifelse(exact == TRUE, search.pattern <- search.pattern, search.pattern <- search.pattern.new)
+###############################################################
+# Tokenize the corpus files
+corpus.tmp <- sapply(corpus.files, function(x) {
+  x <- scan(x, what = "char", quiet = T)
+  x <- paste(x, collapse = " ")
+#  x <- unlist(strsplit(x, " ")) # activate for word concordance (if you are looking for individual words)
+  x <- gsub(" {2,}" , " ", x)
+  x <- str_trim(x, side = "both")
+  }  )
+# Extract the positions of the tokens
+concordance.index <- sapply(corpus.tmp, function(x)  {
+  x <- str_locate_all(x, search.pattern)  }  )
+###############################################################
+# Extract tokens
+token <- sapply(corpus.tmp, function(x)  {
+  x <- str_extract_all(x, search.pattern)  }  )
+# clean tokens
+token <- sapply(token, function(x)  {
+  x <- str_trim(x, side = "both")  }  )
+###############################################################
+# Extract subsequent elements (limited)
+post <- sapply(corpus.tmp, function(file) {
+  conc.index <- sapply(file, function(y)  {
+    str_locate_all(y, search.pattern)  }  )
+  start <- as.vector(sapply(conc.index, function(a){
+    a <- as.numeric(a[, "end"])
+    a <- as.numeric(a) + 1
+    }  )  )
+  end <- as.vector(sapply(conc.index, function(b){
+    b <- as.numeric(b[, "end"])
+    b <- as.numeric(b) + 1
+    b <- as.numeric(b) + range
+    }  )  )
+  positions <- cbind(start, end)
+  sapply(seq_along(file), function(i) {
+    str_sub(file[i], positions[ ,"start"], positions[ ,"end"])
+    }  )
+  }  )
+###############################################################
+# Extract subsequent elements (limited)
+pre <- sapply(corpus.tmp, function(file) {
+  conc.index <- sapply(file, function(y)  {
+    str_locate_all(y, search.pattern)  }  )
+  start <- as.vector(sapply(conc.index, function(a){
+    a <- as.numeric(a[, "start"])
+    a <- ifelse(as.numeric(a) - range < 0, 1, as.numeric(a) - range)
+    }  )  )
+  end <- as.vector(sapply(conc.index, function(b){
+    b <- as.numeric(b[, "start"])
+    b <- as.numeric(b) - 1
+    }  )  )
+  positions <- cbind(start, end)
+  sapply(seq_along(file), function(i) {
+    str_sub(file[i], positions[ ,"start"], positions[ ,"end"])
+    }  )
+  }  )
+###############################################################
+# Extract subsequent elements (limited)
+pre.all <- sapply(corpus.tmp, function(file) {
+  conc.index <- sapply(file, function(y)  {
+    str_locate_all(y, search.pattern)  }  )
+  start <- as.vector(sapply(conc.index, function(a){
+    a <- as.numeric(a[, "start"])
+    a <- 1
+    }  )  )
+  end <- as.vector(sapply(conc.index, function(b){
+    b <- as.numeric(b[, "start"])
+    b <- as.numeric(b) - 1
+    }  )  )
+  positions <- cbind(start, end)
+  sapply(seq_along(file), function(i) {
+    str_sub(file[i], positions[ ,"start"], positions[ ,"end"])
+    }  )
+  }  )
+###############################################################
+text.id <- as.vector(unlist(sapply(names(token), function(x) {
+  x <- gsub(".*/", "", x)
+  x <- gsub("\\ .*", "", x)
+  x <- gsub("\\.TXT", "", x)
+  x <- gsub("\\.txt", "", x) } )))
+len <- as.vector(unlist(sapply(token, function(x) {
+  x <- length(x)} )))
+text.id <- rep(text.id, len)
+###############################################################
+### Vectorize lists
+# vectorize tokens
+token <- as.vector(unlist(token))
+# vectorize pre
+pre <- as.vector(unlist(pre))
+# vectorize post
+post <- as.vector(unlist(post))
+# vectorize pre.all
+pre.all <- as.vector(unlist(pre.all))
+###############################################################
+# Create a vector out of the clean corpus material surrounding the match
+asone.tb <- matrix(cbind(pre, rep("<<", length(pre)), token, rep(">>", length(pre)), post), ncol = 5)
+asone <- apply(asone.tb, 1, paste, collapse = " ")
+asone <-  gsub(" {2,}", " ", asone)
+asone <- str_trim(asone, side = "both")
+###############################################################
+# Create a table of the extracted information
+minL <- min(length(text.id), length(token), length(pre), length(post), length(pre.all), length(asone))
+redux <- data.frame(1:length(minL), text.id[c(1:minL)], pre[c(1:minL)], token[c(1:minL)], post[c(1:minL)], asone[c(1:minL)])
+colnames(redux) <- c("id", "text.id", "previous element(s)","token","following element(s)", "as one")
+full <- data.frame(1:length(minL), text.id[c(1:minL)], pre[c(1:minL)], token[c(1:minL)], post[c(1:minL)], pre.all[c(1:minL)], asone[c(1:minL)])
+colnames(full) <- c("id", "text.id", "previous element(s)","token","following element(s)", "previous context", "as one")
+ifelse(all.pre == FALSE, kwic.tmp <- redux, kwic.tmp <- full)
+###############################################################
+# Create txt file in which we store the results
+#output.file = file.create(outputpath, showWarnings = F)
+# Store the txt file in the output file
+#write.table(kwic.tmp, outputpath, sep = "\t", row.names = F)
+# Return
+return(list(kwic.tmp))
+# End function
+  }
+###############################################################
+### ---                    THE END
+###############################################################
+```
+
+Produce word concordances for gutenberg training books.
+```{r}
+pathname <- "data/gutenberg/training"
+search.pattern <-  c("his is")
+gbTrainBooks <- ConcR(pathname, search.pattern, range=20, exact = FALSE, all.pre = FALSE)
+head(gbTrainBooks[[1]])
+```
+Online several concordance tools are available, such as TextSTAT at http://neon.niederlandistik.fu-berlin.de/en/textstat/.
+
+Analysis of corpus is demonstrated with the Olympic tweet example. First some basic uses. 
+```{r}
+##make sure corpT object is available
+##create term document matrix
+tdm <- TermDocumentMatrix(corpT)
+inspect(tdm)
+##create document term matrix
+dtm <- DocumentTermMatrix(corpT)
+inspect(dtm)
+##show most requent terms in dtm
+findFreqTerms(dtm, 10)
+##find associated terms
+findAssocs(dtm, "athlet", 0.4)
+##remove sparce terms
+inspect(removeSparseTerms(dtm, 0.4))
+##use a dictionary to limit the words included in dtm
+inspect(DocumentTermMatrix(corpT, list(dictionary = c("olymp", "game", "athlet"))))
+##remove specific words from dtm
+corpT2<- tm_map(corpT, removeWords, c("olymp", "2016"))
+dtm2 <- DocumentTermMatrix(corpT2)
+inspect(dtm2)
+```
+
+Perform a tSNE on the text in Olympic tweets.
+```{r}
+library(Rtsne)
+library(jpeg)
+library(stringdist) ##install as administrator/root
+##preprocess tweet texts
+tweets_text <- paste(tweetsTDF$text2, collapse = " ")
+##split into words
+tw_wordsT <- unlist(str_split(tweets_text, pattern = " "))
+##convert to lower (deal with UTF8 issues)
+tw_wordsT_low <- tolower(iconv(tw_wordsT, "UTF-8", "UTF-8",sub=''))
+##remove punctuation
+tw_wordsT_low <- gsub("[[:punct:]]", "", tw_wordsT_low)
+##remove empy words/strings
+tw_wordsT_low <- tw_wordsT_low[nchar(tw_wordsT_low) > 0]
+##remove duplicate words
+tw_wordsT_low <- unique(tw_wordsT_low)
+
+##Define distance matrix calcuation functions
+stringdistFast <- function(word1, word2)
+{
+  d1 = stringdist(word1, word2)
+  d2 = stringdist(word1, gsub("(.+) (.+)", "\\2 \\1", word2))
+  ifelse(d1==d2,d1+5*(substr(d1,1,1)!=substr(d2,1,1)),pmin(d1,d2))
+}
+
+stringdistmatFast <- function(test)
+{
+  m = diag(0, length(test))
+  sapply(1:(length(test)-1), function(i)
+  {
+    m[,i] <<- c(rep(0,i), stringdistFast(test[i],test[(i+1):length(test)]))
+  }) 
+  `dimnames<-`(m + t(m), list(test,test))
+}
+
+##Calculate stringsdistance for unique words in tweets
+sdist <- stringdistmatFast(tw_wordsT_low)
+##run Rtsne with default parameters
+rtsne_out <- Rtsne(as.matrix(sdist))
+##Show the output of Rtsne 
+plot(rtsne_out$Y, t='n', main="Tweets_SNE")
+text(rtsne_out$Y, labels=rownames(sdist))
+##if needed save file (width 2400, height 1800)
+```
+More corpus analysis tools can be found at https://corpus-analysis.com

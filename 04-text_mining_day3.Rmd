@@ -1,0 +1,183 @@
+---
+title: "Text mining course CBS"
+output: html_notebook
+---
+
+#Day 3, Advanced text analysis
+
+Based on the slides of Text Mining tasks (TextMiningCBS-4-text-mining-tasks.pdf) by Ali available on https://drive.google.com/drive/folders/1k0mHe69qbAf6RYqkp_K9G4D50z1399-o.
+
+##Language detection.
+Load libraries.
+```{r}
+library(twitteR, verbose = FALSE)
+library(stringr, verbose = FALSE)
+library(franc)
+```
+
+Language detection examples, its not perfect certainly not for short texts.
+```{r}
+##load tweets
+load("data/Twitter/tweets_topic.RData")
+##convert to data frame
+tweetsTDF <- twListToDF(tweetsT)
+##make sure UTF8 coding is used
+tweetsTDF$text2 <- iconv(tweetsTDF$text, "UTF-8", "UTF-8", sub='')
+##detect language with franc package
+tweetsTDF$lang <- sapply(tweetsTDF$text2, franc)
+tweetsTDF$lang
+```
+Show a few examples (that were classified correct).
+```{r}
+tweetsTDF$text2[1]; tweetsTDF$lang[1] ##English
+tweetsTDF$text2[7]; tweetsTDF$lang[7] ##Dutch
+tweetsTDF$text2[155]; tweetsTDF$lang[155] ##Japanese
+tweetsTDF$text2[199]; tweetsTDF$lang[199] ##Indonesian
+```
+
+##Name entity recognition. 
+Make sure to install the packages listed below correctly for your OS (more details on: https://rpubs.com/lmullen/nlp-chapter). SpacyR could also be used (https://cran.r-project.org/web/packages/spacyr/spacyr.pdf)
+```{r}
+library(readr)
+library(rJava)
+library(NLP, verbose = FALSE)
+library(openNLP)
+library(openNLPmodels.en) ##install.packages("openNLPmodels.en", repos = "http://datacube.wu.ac.at/", type = "source")
+library(RWeka)
+library(qdap, verbose = FALSE)
+library(magrittr, verbose = FALSE)
+```
+
+Get text and process.
+```{r}
+##get data
+bio <- read_file("data/anb-jarena-lee.txt")
+bio <- as.String(bio)
+##Creat annotators
+word_ann <- Maxent_Word_Token_Annotator()
+sent_ann <- Maxent_Sent_Token_Annotator()
+bio_annotations <- annotate(bio, list(sent_ann, word_ann))
+bio_doc <- AnnotatedPlainTextDocument(bio, bio_annotations)
+person_ann <- Maxent_Entity_Annotator(kind = "person")
+location_ann <- Maxent_Entity_Annotator(kind = "location")
+organization_ann <- Maxent_Entity_Annotator(kind = "organization")
+##set up pipeline
+pipeline <- list(sent_ann, word_ann, person_ann, location_ann, organization_ann)
+bio_annotations <- annotate(bio, pipeline)
+bio_doc <- AnnotatedPlainTextDocument(bio, bio_annotations)
+#Create entity extraction function
+entities <- function(doc, kind) {
+  s <- doc$content
+  a <- annotations(doc)[[1]]
+  if(hasArg(kind)) {
+    k <- sapply(a$features, `[[`, "kind")
+    s[a[k == kind]]
+  } else {
+    s[a[a$type == "entity"]]
+  }
+}
+```
+Show entities identified in text. Who are the persons?
+```{r}
+pers <- entities(bio_doc, kind = "person")
+length(pers); pers
+```
+Which are the locations mentioned?
+```{r}
+locs <- entities(bio_doc, kind = "location")
+length(locs); locs
+```
+And which organizations are mentioned?
+```{r}
+orgs <- entities(bio_doc, kind = "organization")
+length(orgs); orgs
+```
+
+##Concept extraction
+Use the online Babelfly.org website (http://babelfy.org/) and analyse the English text in the anb-jarena-lee.txt file shown below.
+```{r}
+bio2 <- str_replace_all(bio, pattern = "\\n", replacement = "")
+bio2
+```
+The same text can be automatically summerized online at, for instance, by text compacter (http://textcompactor.com/).
+
+##Sentiment analysis.
+This is a simple example to illustrate the principle. For some languages on-line free api trails are available (e.g. www.monkeylearn.com)
+```{r}
+library(twitteR)
+##positive word list
+pos_words <- c("laugh", "love", "happy", "excellent", "joy", "success", "win", "rainbow", "smile", "pleasure")
+##negative word list
+neg_words <- c("none", "never", "nobody", "neither", "nor", "nowhere", "seldom", "nothing", "few", "hardly")
+##preprocess tweets to lower case
+tweetsTDF$text2_low <- tolower(tweetsTDF$text2)
+##count pos and neg words
+tweetsTDF$pos <- 0
+tweetsTDF$neg <- 0
+for(i in 1:nrow(tweetsTDF)){
+  ##get words from tweet
+  words_tw <- unlist(str_split(tweetsTDF$text2_low[i], pattern = " "))
+  ##count postive
+  tweetsTDF$pos[i] <- length(pos_words[pos_words %in% words_tw])
+  ##count negative
+  tweetsTDF$neg[i] <- length(neg_words[neg_words %in% words_tw])
+}
+##calculate overal score
+tweetsTDF$score <- tweetsTDF$pos - tweetsTDF$neg
+tweetsTDF$score
+```
+
+Example of MonkeyLearn based sentiment classification. Install package and request key first.
+```{r}
+##library(devtools)
+##library(Rcpp)
+##devtools::install_github("ropensci/monkeylearn", force = TRUE)
+library(monkeylearn)
+monkey_api_key <- "INSERT YOUR API KEY HERE"  ##request API acces key at http://www.monkeylearn.com/
+```
+Apply monkeylearn classifier to tweets collection previously studied.
+```{r}
+tweetsTDF$sentiment <- ""
+tweetsTDF$score_ml <- -1
+for(i in 1:nrow(tweetsTDF)) {
+  if(nchar(tweetsTDF$text2_low[i]) > 0) {
+    ##get sentiment (classifier_id is for english language), determined one after the other 
+    ##REMOVE ## FROM LINES BELOW WHEN API KEY IS AVAILABLE
+    ##ml <- monkeylearn_classify(request = tweetsTDF$text2_low[i], key = monkey_api_key, classifier_id = "cl_qkjxv9Ly", verbose = TRUE)
+    ##tweetsTDF$sentiment[i] <- ml$label ##sentiment assigned
+    ##tweetsTDF$score_ml[i] <- ml$probability ##probability of sentiment determined
+  }
+}
+```
+
+
+##Topic detection in the tweets previously studied.
+```{r}
+library(tm)
+library(slam)
+library(topicmodels, verbose = FALSE)
+```
+Create corpus and preproces text.
+```{r}
+corpT <- Corpus(VectorSource(tweetsTDF$text2))
+corpT <- tm_map(corpT, tolower)
+corpT <- tm_map(corpT, stripWhitespace)
+corpT <- tm_map(corpT, removePunctuation)
+corpT <- tm_map(corpT, removeWords, stopwords('english'))
+corpT <- tm_map(corpT, stemDocument, language = 'en')   ##Assume all tweets are in English
+tw_dtm <- DocumentTermMatrix(corpT, control = list(minWordLength = 3)) 
+tw_dtm <- tw_dtm[row_sums(tw_dtm) > 0,] ##only keep rows with non-zero entries
+dim(tw_dtm)
+```
+Cluster and show top 5 topics with top 5 terms identified.
+```{r}
+k <- 20
+SEED <- 2016
+tw_TM <- list(VEM = LDA(tw_dtm, k = k, control = list(seed = SEED)),
+          VEM_fixed = LDA(tw_dtm, k = k, control = list(estimate.alpha = FALSE, seed = SEED)),
+          Gibbs = LDA(tw_dtm, k = k, method = "Gibbs", control = list(seed = SEED, burnin = 1000, thin = 100, iter = 1000)),
+          CTM = CTM(tw_dtm, k = k, control = list(seed = SEED, var = list(tol = 10^-4), em = list(tol = 10^-3))))
+##get terms for 5 most important topics according to VEM
+Terms <- terms(tw_TM[["VEM"]], 5) ##Also try VEM_fixed, Gibbs and CTM
+Terms[,1:5]
+```

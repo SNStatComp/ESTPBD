@@ -1,0 +1,230 @@
+---
+title: "Text mining course CBS"
+output:
+  html_document:
+    df_print: paged
+---
+
+#Day 4, Machine learning and text analytiscs
+
+Based on the Machine learning slides (TextMiningCBS-6-machine-learning.pdf) by Ali located at https://drive.google.com/drive/folders/1k0mHe69qbAf6RYqkp_K9G4D50z1399-o
+
+Load libraries
+```{r}
+library(stringr, verbose = FALSE)
+library(tm, verbose = FALSE)
+library(SnowballC, verbose = FALSE)
+library(caret, verbose = FALSE)
+library(text2vec, verbose = FALSE)
+```
+
+Load data
+The 'movie_review' tweet set will be used to illustrate the effect of preprocessing text and to compare various machine learning techniques. The reviews need to be classified according to their sentiment which is 0 (negative) or 1 (positive).
+```{r}
+data("movie_review")
+str(movie_review)
+```
+
+Preprocess reviews.
+```{r}
+movie_review$text <- tolower(iconv(movie_review$review, to="ASCII//TRANSLIT"))
+movie_review$text <- removePunctuation(movie_review$text)
+movie_review$text <- removeWords(movie_review$text, stopwords("english"))
+movie_review$text <- stemDocument(movie_review$text)
+movie_review$text <- stripWhitespace(movie_review$text)
+##create DocumentTermMatrix
+corpT <- VCorpus(VectorSource(movie_review$text))
+tw_dtm <- DocumentTermMatrix(corpT, control = list(wordLengths=c(3,Inf), weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+dim(tw_dtm)
+##reduce sparse terms
+tw_dtm <- removeSparseTerms(tw_dtm, 0.99)
+dim(tw_dtm)
+dtm <- as.matrix(tw_dtm)
+##create bigram tokenizer
+BigramTokenizer <- function(x) {
+  unlist(lapply(NLP:::ngrams(words(x), 2), paste, collapse = " "), use.names = FALSE)
+}
+##Make bigram dtm
+tw_dtm2 <- DocumentTermMatrix(corpT, control = list(tokenize = BigramTokenizer, weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+dim(tw_dtm2)
+##reduce sparse bigrams (The warning "NAs produced by integer overflow" indicates sparsity)
+tw_dtm2 <- removeSparseTerms(tw_dtm2, 0.99)
+dim(tw_dtm2)
+dtm2 <- as.matrix(tw_dtm2)
+##adjust names of bigrams, replace space with underscore
+colnames(dtm2) <- gsub(pattern = " ", replacement = "_", x = colnames(dtm2))
+##combine dtm's (uni and bigrams)
+dtm3 <- cbind(dtm, dtm2)
+colnames(dtm3) <- c(colnames(dtm), colnames(dtm2))
+##dimensions of final matrix
+dim(dtm3)
+```
+
+Create training and test set
+```{r}
+##create training and test set (70-30)
+set.seed(87654321)
+ind <- sample(x = 2, size = nrow(dtm3), replace=TRUE, prob=c(0.70, 0.30))
+##Create training set
+dtm.training <- dtm3[ind == 1, ]
+dtm.training <- as.data.frame(dtm.training)
+names(dtm.training) <- make.names(names(dtm.training)) 
+dtm.trainLabels <- as.factor(movie_review$sentiment[ind == 1])
+print(paste("train", length(dtm.trainLabels), sep = " "))
+##Extend training set with labels (only used in some of the examples shown below)
+dtm_training <- dtm.training
+dtm_training$sentScore <- dtm.trainLabels
+names(dtm_training) <- make.names(names(dtm_training))
+
+##Create test set
+dtm.test <- as.data.frame(dtm3[ind == 2, ])
+names(dtm.test) <- make.names(names(dtm.test)) 
+dtm.testLabels <- as.factor(movie_review$sentiment[ind == 2])
+print(paste("test", length(dtm.testLabels), sep = " "))
+```
+
+
+##Classify
+Compare different methods with caret package.
+Start with Naive bayes
+```{r}
+library(naivebayes, verbose = FALSE)
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "naive_bayes", metric = "Accuracy", trControl = trainControl(method='cv',number=10))
+pred <- predict(model, dtm.test)
+cmNB <- confusionMatrix(pred, dtm.testLabels)
+cmNB$table
+cmNB$overall['Accuracy']
+```
+
+Logistic regression
+```{r}
+library(glmnet, verbose = FALSE) 
+##The caret package is not used in this example
+cv <- cv.glmnet(x = as.matrix(dtm.training), y = dtm.trainLabels, family = "binomial", type.measure = "class", alpha = 1, nfolds = 10)
+pred <- predict(cv, newx = as.matrix(dtm.test), s = "lambda.min", type = "class")
+cmLG <- confusionMatrix(pred, dtm.testLabels)
+cmLG$table
+cmLG$overall['Accuracy']
+```
+
+Support vector machine (linear kernel).
+```{r}
+library(e1071, verbose = FALSE)
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "svmLinear2", metric = "Accuracy", trControl = trainControl(method='cv',number=5)) ##may take a while to complete
+##model <- svm(sentScore ~ ., data = dtm_training, kernel = "linear") ##quicker single model fit alternative
+pred <- predict(model, dtm.test)
+cmSVML <- confusionMatrix(pred, dtm.testLabels)
+cmSVML$table
+cmSVML$overall['Accuracy']
+```
+
+Support vector machine (radial kernel).
+```{r}
+library(kernlab, verbose = FALSE)
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "svmRadial", metric = "Accuracy", trControl = trainControl(method='cv',number=5))  ##may take a while to complete
+##model <- svm(sentScore ~ ., data = dtm_training, kernel = "radial") ##quicker single model fit alternative
+pred <- predict(model, dtm.test)
+cmSVMR <- confusionMatrix(pred, dtm.testLabels)
+cmSVMR$table
+cmSVMR$overall['Accuracy']
+```
+
+Random Forest.
+```{r}
+library(randomForest, verbose = FALSE)
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "rf", ntree = 500, metric = "Accuracy", trControl = trainControl(method='cv',number=5))  ##may take a long time to complete
+##model <- randomForest(sentScore ~ ., data = dtm_training, ntree = 500) ##quicker single model fit alternative
+pred <- predict(model, dtm.test)
+cmRF <- confusionMatrix(pred, dtm.testLabels)
+cmRF$table
+cmRF$overall['Accuracy']
+```
+
+and a Neural network.
+```{r}
+library(nnet, verbose = FALSE)
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "nnet", maxit = 200, MaxNWts = 11000, lineout = TRUE, trace = FALSE, metric = "Accuracy", trControl = trainControl(method = 'cv', number = 5), tuneGrid = expand.grid(size=6, decay=0.1))  ##may take a while to complete
+##model <- nnet(sentScore ~ ., data = dtm_training, size = 6, decay = 0.1, maxit = 200, MaxNWts = 11000) ##quicker single model fit alternative
+pred <- predict(model, dtm.test)
+cmNN <- confusionMatrix(pred, dtm.testLabels)
+cmNN$table
+cmNN$overall['Accuracy']
+```
+
+Word embeddings
+```{r}
+library(text2vec, verbose = FALSE)
+# define preprocessing function and tokenization function for train and test set
+prep_fun <- tolower
+tok_fun <- word_tokenizer
+##Create train dtm
+it_train <- itoken(movie_review$review[ind == 1], preprocessor = prep_fun, tokenizer = tok_fun, ids = movie_review$id[ind == 1], progressbar = FALSE)
+vocabTrain <- create_vocabulary(it_train)
+vectorizer <- vocab_vectorizer(vocabTrain)
+dtm_trainWE <- create_dtm(it_train, vectorizer)
+dtm_trainWE <- as.data.frame(as.matrix(dtm_trainWE))
+names(dtm_trainWE) <- make.names(names(dtm_trainWE))
+print(paste("train", dim(dtm_trainWE), sep = " "))
+##and now for test set
+it_test <- itoken(movie_review$review[ind == 2], preprocessor = prep_fun, tokenizer = tok_fun, ids = movie_review$id[ind == 2], progressbar = FALSE)
+dtm_testWE <- create_dtm(it_test, vectorizer)
+dtm_testWE <- as.data.frame(as.matrix(dtm_testWE))
+names(dtm_testWE) <- make.names(names(dtm_testWE))
+print(paste("test", dim(dtm_testWE), sep = " "))
+```
+
+Now use the word embeddings dtm to fit a model, glmnet is used as an example here.
+```{r}
+library(glmnet, verbose = FALSE) 
+##The caret package is not used in this example
+cv <- cv.glmnet(x = as.matrix(dtm_trainWE), y = dtm.trainLabels, family = "binomial", type.measure = "class", alpha = 1, nfolds = 10)
+pred <- predict(cv, newx = as.matrix(dtm_testWE), s = "lambda.min", type = "class")
+cmLG2 <- confusionMatrix(pred, dtm.testLabels)
+cmLG2$table
+cmLG2$overall['Accuracy']
+```
+By adjusting the preprocessing steps and their sequence, (fine)tuning the model, chosing another metric and trying various (ML) methods, models of increasing prediction accuracy can be developed. Adjust the code above to see what the effect of particular combinations are.
+
+Anyone interested in applying Deep Learning methods in R is reffered to https://www.r-bloggers.com/deep-learning-in-r-2/ and http://blog.revolutionanalytics.com/2017/02/deep-learning-in-r.html for more info.
+
+
+##Multicore
+When fitting models it can really help to make use of the multicore options many modern CPU's provide. Below is an example of fitting a Naive Bayes model with the caret package with a single core (default) and with all available cores.
+```{r}
+library(doParallel)
+##get number of cores available on machine
+cores <- detectCores()
+cores ##if this number is more than 1, you can run the code listed below
+```
+
+First fit model on a single core, then fit model with all available cores with caret package. Naive Bayes is used as an example.
+```{r}
+library(naivebayes)
+##run model
+start <- Sys.time()
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "naive_bayes", metric = "Accuracy", trControl = trainControl(method='cv',number=10))
+pred <- predict(model, dtm.test)
+end <- Sys.time()
+##show results and time
+cmNB <- confusionMatrix(pred, dtm.testLabels)
+cmNB$table
+cmNB$overall['Accuracy']
+print(end - start)
+```
+Next with all cores available.
+```{r}
+##first define cluster
+library(doMC)
+registerDoMC(cores = cores)
+##run model
+start <- Sys.time()
+model <- train(x = dtm.training, y = dtm.trainLabels, method = "naive_bayes", metric = "Accuracy", trControl = trainControl(method='cv',number=10))
+pred <- predict(model, dtm.test)
+end <- Sys.time()
+cmNB <- confusionMatrix(pred, dtm.testLabels)
+cmNB$table
+cmNB$overall['Accuracy']
+print(end - start)
+##stop cluster
+registerDoSEQ() ##Set to single core use
+```
